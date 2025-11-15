@@ -1,0 +1,165 @@
+# ==============================================================
+# Git Ignore - HOMA Project
+# ==============================================================
+
+# ==============================================================
+# Backend (Spring Boot / Gradle)
+# ==============================================================
+homa/build/
+homa/.gradle/
+homa/.settings/
+homa/.vscode/
+homa/.classpath
+homa/.project
+homa/.springBeans
+homa/out/
+homa/*.log
+homa/*.jar
+homa/bin/
+homa/tmp/
+
+# IDE
+homa/.idea/
+homa/*.iml
+homa/*.iws
+homa/*.ipr
+
+# ==============================================================
+# Frontend (Angular / Node)
+# ==============================================================
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.DS_Store
+frontend/Thumbs.db
+
+# IDE
+frontend/.idea/
+frontend/.vscode/
+frontend/*.code-workspace
+
+# ==============================================================
+# Dependencies
+# ==============================================================
+package-lock.json
+yarn.lock
+gradle.lock
+
+# ==============================================================
+# Environment & Secrets
+# ==============================================================
+.env
+.env.local
+.env.*.local
+.env.prod
+.env.staging
+.env.development
+.aws/credentials
+.aws/config
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*tfvars
+!terraform/*example.tfvars
+!terraform/environments/*.tfvars
+
+# ==============================================================
+# Docker
+# ==============================================================
+docker-compose.override.yml
+.dockerignore
+
+# ==============================================================
+# Logs
+# ==============================================================
+*.log
+logs/
+log/
+
+# ==============================================================
+# OS Specific
+# ==============================================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+
+# ==============================================================
+# IDE Specific
+# ==============================================================
+.vscode/settings.json
+.vscode/extensions.json
+*.code-workspace
+
+# ==============================================================
+# Build Artifacts
+# ==============================================================
+target/
+dist/
+build/
+out/
+
+# ==============================================================
+# Temporary Files
+# ==============================================================
+*.tmp
+*.temp
+.cache/
+tmp/
+
+# ==============================================================
+# Credentials & Security
+# ==============================================================
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+ssh/
+
+# ==============================================================
+# Database Backups
+# ==============================================================
+*.sql
+*.sql.gz
+backups/
+
+# ==============================================================
+# IDE Cache
+# ==============================================================
+.eclipse/
+.metadata/
+bin/
+.LSOverride
+
+# ==============================================================
+# CI/CD
+# ==============================================================
+.github/workflows/*.log
+.github/workflows/debug
+
+# ==============================================================
+# Test Coverage
+# ==============================================================
+coverage/
+.nyc_output/
+jacoco.exec
+
+# ==============================================================
+# Local Development
+# ==============================================================
+dev-notes.md
+local-config.json
+.local-env

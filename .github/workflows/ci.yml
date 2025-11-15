@@ -1,0 +1,307 @@
+# ==============================================================
+# CI Pipeline - GitHub Actions
+# ==============================================================
+# Ejecuta cuando se hace push a develop o PR hacia main/develop
+# Incluye: tests, build, análisis SonarQube
+# ==============================================================
+
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: homa-backend
+  FRONTEND_IMAGE_NAME: homa-frontend
+
+jobs:
+  # ==============================================================
+  # BACKEND TESTS
+  # ==============================================================
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: test123
+          MARIADB_DATABASE: homa_test_db
+          MARIADB_USER: test_user
+          MARIADB_PASSWORD: testpass
+        options: >-
+          --health-cmd="mariadb-admin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 3306:3306
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run backend tests
+        run: |
+          cd homa
+          ./gradlew test --no-daemon
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mariadb://localhost:3306/homa_test_db
+          SPRING_DATASOURCE_USERNAME: test_user
+          SPRING_DATASOURCE_PASSWORD: testpass
+
+      - name: Generate JaCoCo coverage report
+        run: |
+          cd homa
+          ./gradlew jacocoTestReport --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./homa/build/reports/jacoco/test/jacocoTestReport.xml
+          flags: backend
+          name: backend-coverage
+
+  # ==============================================================
+  # FRONTEND TESTS
+  # ==============================================================
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run linter
+        run: |
+          cd frontend
+          npm run lint || true
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+
+  # ==============================================================
+  # SONARQUBE ANALYSIS
+  # ==============================================================
+  sonarqube-analysis:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Generate backend JaCoCo report
+        run: |
+          cd homa
+          ./gradlew jacocoTestReport --no-daemon
+
+      - name: Run SonarQube Backend Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          cd homa
+          ./gradlew sonarqube \
+            -Dsonar.projectKey=HOMA-Backend \
+            -Dsonar.projectName="Proyecto HOMA - Backend" \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.login=$SONAR_TOKEN \
+            --no-daemon
+
+  # ==============================================================
+  # BUILD BACKEND
+  # ==============================================================
+  build-backend:
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    if: github.event_name == 'push' || github.event.action == 'opened'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build backend JAR
+        run: |
+          cd homa
+          ./gradlew bootJar --no-daemon
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        uses: docker/build-push-action@v4
+        with:
+          context: ./homa
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homa-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homa-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==============================================================
+  # BUILD FRONTEND
+  # ==============================================================
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: frontend-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build -- --configuration production
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homa-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/homa-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==============================================================
+  # SECURITY SCANNING
+  # ==============================================================
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ==============================================================
+  # DEPENDENCY CHECK
+  # ==============================================================
+  dependency-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run dependency check for backend
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          path: './homa'
+          format: 'JSON'
+          args: >-
+            --enableExperimental
+            --exclude '**/build/**'
+
+      - name: Upload dependency check results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-check-report
+          path: reports/dependency-check-report.json

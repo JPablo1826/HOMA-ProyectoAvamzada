@@ -1,0 +1,325 @@
+# ==============================================================
+# CD Pipeline - GitHub Actions
+# ==============================================================
+# Ejecuta despliegue automático a staging/producción
+# ==============================================================
+
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop  # Deploy a staging
+      - main     # Deploy a producción
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/ci.yml'
+
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+    branches:
+      - develop
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: homa-backend
+  FRONTEND_IMAGE_NAME: homa-frontend
+
+jobs:
+  # ==============================================================
+  # DETERMINE ENVIRONMENT
+  # ==============================================================
+  determine-env:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      deploy: ${{ steps.set-env.outputs.deploy }}
+    steps:
+      - name: Determine environment
+        id: set-env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "environment=none" >> $GITHUB_OUTPUT
+            echo "deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ==============================================================
+  # DEPLOY TO STAGING (develop branch)
+  # ==============================================================
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: determine-env
+    if: needs.determine-env.outputs.environment == 'staging' && needs.determine-env.outputs.deploy == 'true'
+    environment:
+      name: staging
+      url: https://staging.homa.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Staging Server
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_USER }}
+          DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+          
+          # Conectar e iniciar despliegue
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Pull latest code
+            git pull origin develop
+            
+            # Load env vars
+            source .env.staging
+            
+            # Pull latest images
+            docker-compose -f docker-compose.yml pull
+            
+            # Stop old containers
+            docker-compose down
+            
+            # Start new containers
+            docker-compose -f docker-compose.yml up -d
+            
+            # Wait for services to be healthy
+            sleep 10
+            
+            # Run smoke tests
+            echo "Running smoke tests..."
+            curl -f http://localhost/healthz || exit 1
+            curl -f http://localhost:8080/actuator/health || exit 1
+            
+            echo "✅ Staging deployment successful!"
+          EOF
+
+      - name: Post Deployment Verification
+        run: |
+          echo "Verifying staging deployment..."
+          curl -f https://staging.homa.example.com/healthz || exit 1
+          echo "✅ Staging is healthy"
+
+  # ==============================================================
+  # DEPLOY TO PRODUCTION (main branch)
+  # ==============================================================
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: determine-env
+    if: needs.determine-env.outputs.environment == 'production' && needs.determine-env.outputs.deploy == 'true'
+    environment:
+      name: production
+      url: https://homa.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create production backup
+        env:
+          DEPLOY_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+          
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Backup base de datos
+            echo "📦 Creating database backup..."
+            docker-compose exec -T database mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > backups/db_$(date +%Y%m%d_%H%M%S).sql
+            
+            # Backup volúmenes
+            echo "📦 Creating volume backups..."
+            tar -czf backups/mysql_data_$(date +%Y%m%d_%H%M%S).tar.gz -V mysql_data
+            
+            echo "✅ Backups completed"
+          EOF
+
+      - name: Deploy to Production
+        env:
+          DEPLOY_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+          
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Load env vars
+            source .env.production
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Pull latest images
+            docker-compose -f docker-compose.prod.yml pull
+            
+            # Graceful shutdown de containers
+            echo "🛑 Stopping services gracefully..."
+            docker-compose -f docker-compose.prod.yml stop -t 30
+            
+            # Start new containers
+            echo "🚀 Starting new services..."
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Wait for services to be healthy
+            echo "⏳ Waiting for services to be healthy..."
+            for i in {1..30}; do
+              if curl -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
+                echo "✅ Backend is healthy"
+                break
+              fi
+              echo "Attempt $i/30..."
+              sleep 2
+            done
+            
+            # Run smoke tests
+            echo "🧪 Running smoke tests..."
+            curl -f http://localhost/healthz || (echo "Frontend check failed"; exit 1)
+            curl -f http://localhost:8080/actuator/health || (echo "Backend check failed"; exit 1)
+            
+            echo "✅ Production deployment successful!"
+          EOF
+
+      - name: Health Check
+        run: |
+          echo "Verifying production deployment..."
+          for i in {1..5}; do
+            if curl -f https://homa.example.com/healthz; then
+              echo "✅ Production is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/5 - Health check failed, retrying..."
+            sleep 10
+          done
+          exit 1
+
+      - name: Slack Notification - Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "✅ Production Deployment Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Production Deployment Successful*\n*Commit:* ${{ github.sha }}\n*Branch:* main\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+      - name: Slack Notification - Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "❌ Production Deployment Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Production Deployment Failed*\n*Commit:* ${{ github.sha }}\n*Branch:* main\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+
+  # ==============================================================
+  # ROLLBACK PROCEDURE (Manual trigger)
+  # ==============================================================
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: deploy-production
+    environment:
+      name: production
+
+    steps:
+      - name: Rollback Production
+        env:
+          DEPLOY_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+          
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            
+            echo "🔄 Rolling back to previous version..."
+            
+            # Get previous tag
+            PREVIOUS_VERSION=$(git describe --tags --abbrev=0 HEAD~1)
+            
+            # Checkout previous version
+            git checkout $PREVIOUS_VERSION
+            
+            # Reload env
+            source .env.production
+            
+            # Pull previous images
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml restart
+            
+            # Verify
+            sleep 10
+            curl -f http://localhost:8080/actuator/health || exit 1
+            
+            echo "✅ Rollback completed to $PREVIOUS_VERSION"
+          EOF
+
+      - name: Slack Notification - Rollback
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "🔄 Production Rollback Executed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🔄 Production Rollback Executed*\n*Reason:* Deployment failed\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
