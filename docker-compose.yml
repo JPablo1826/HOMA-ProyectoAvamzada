@@ -32,7 +32,7 @@ services:
   # Backend Spring Boot
   backend:
     build:
-      context: ./homa
+      context: ./Homa
       dockerfile: Dockerfile
     container_name: homa-backend
     restart: unless-stopped
@@ -70,7 +70,7 @@ services:
       timeout: 10s
       retries: 5
       interval: 30s
-      start_period: 40s
+      start_period: 120s
 
   # Frontend Angular
   frontend:
