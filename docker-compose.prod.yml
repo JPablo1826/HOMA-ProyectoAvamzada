@@ -36,7 +36,7 @@ services:
 
   # Backend Spring Boot
   backend:
-    image: homa-backend:${APP_VERSION}
+    image: homa-backend:1.0.0
     container_name: homa-backend-prod
     restart: always
     depends_on:
@@ -96,7 +96,7 @@ services:
 
   # Frontend Angular con Nginx
   frontend:
-    image: homa-frontend:${APP_VERSION}
+    image: homa-frontend:1.0.0
     container_name: homa-frontend-prod
     restart: always
     depends_on:

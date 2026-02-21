@@ -12,8 +12,8 @@ services:
     environment:
       MARIADB_ROOT_PASSWORD: emili123
       MARIADB_DATABASE: homa_avanzada_db
-      MARIADB_USER: homa_user
-      MARIADB_PASSWORD: homapass
+      MARIADB_USER: root
+      MARIADB_PASSWORD: emili123
       MARIADB_AUTO_UPGRADE: 1
     ports:
       - "3310:3306"
@@ -50,7 +50,7 @@ services:
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_JPA_SHOW_SQL: false
       SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.MariaDBDialect
-      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: true
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
       
       # Perfil activo
       SPRING_PROFILES_ACTIVE: dev
@@ -58,6 +58,8 @@ services:
       # Servidor
       SERVER_PORT: 8080
       SERVER_SERVLET_CONTEXT_PATH: /
+      MANAGEMENT_HEALTH_MAIL_ENABLED: false
+
     ports:
       - "8080:8080"
     volumes:
@@ -90,7 +92,7 @@ services:
     networks:
       - homa-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
       timeout: 10s
       retries: 5
       interval: 30s
