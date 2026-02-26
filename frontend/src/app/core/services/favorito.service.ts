@@ -1,16 +1,21 @@
 import { Injectable } from '@angular/core'
 import { HttpClient } from '@angular/common/http'
 import { Observable } from 'rxjs'
-import { environment } from '@environments/environment'
 import { Favorito, FavoritoConAlojamiento } from '../models/favorito.model'
+import { ConfigService } from './config.service'
 
 @Injectable({
   providedIn: 'root'
 })
 export class FavoritoService {
-  private apiUrl = `${environment.apiUrl}/favoritos`
+  private apiUrl: string
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private configService: ConfigService,
+  ) {
+    this.apiUrl = `${this.configService.getApiUrl()}/favoritos`
+  }
 
   // Obtener todos los favoritos del usuario autenticado
   // GET /api/favoritos/mios?page=0&size=10

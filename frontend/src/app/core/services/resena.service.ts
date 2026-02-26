@@ -2,16 +2,21 @@ import { Injectable } from "@angular/core"
 import { HttpClient } from "@angular/common/http"
 import { Observable } from "rxjs"
 import { map } from "rxjs/operators"
-import { environment } from "@environments/environment"
 import { Resena, ResenaRequest, ResponderResenaRequest } from "../models/resena.model"
+import { ConfigService } from "./config.service"
 
 @Injectable({
   providedIn: "root",
 })
 export class ResenaService {
-  private apiUrl = `${environment.apiUrl}/resenas`
+  private apiUrl: string
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private configService: ConfigService,
+  ) {
+    this.apiUrl = `${this.configService.getApiUrl()}/resenas`
+  }
 
   crear(resena: ResenaRequest): Observable<Resena> {
     return this.http.post<Resena>(this.apiUrl, resena)

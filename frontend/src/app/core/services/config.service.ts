@@ -1,4 +1,5 @@
 import { Injectable } from "@angular/core";
+import { environment } from "@environments/environment";
 
 @Injectable({
   providedIn: "root",
@@ -10,8 +11,8 @@ export class ConfigService {
     // Leer de variables de ambiente del navegador
     const envApiUrl = (window as any).__APP_CONFIG__?.API_URL;
     
-    // Si no hay variable de ambiente, usar valor por defecto
-    this.apiUrl = envApiUrl || "http://localhost:8080/api";
+    // Si no hay variable de ambiente en runtime, usar environment de Angular
+    this.apiUrl = envApiUrl || environment.apiUrl;
     
     console.log("[ConfigService] API URL: ", this.apiUrl);
   }

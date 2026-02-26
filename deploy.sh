@@ -247,7 +247,7 @@ run_smoke_tests() {
     log_info "Ejecutando smoke tests..."
     
     # Test API
-    API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/health)
+    API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/actuator/health)
     if [[ "$API_RESPONSE" == "200" ]]; then
         log_success "API smoke test passed"
     else

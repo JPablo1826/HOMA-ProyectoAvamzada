@@ -1,16 +1,21 @@
 import { Injectable } from "@angular/core"
 import { HttpClient } from "@angular/common/http"
 import type { Observable } from "rxjs"
-import { environment } from "@environments/environment"
 import type { ApiResponse, Usuario } from "../models/usuario.model"
+import { ConfigService } from "./config.service"
 
 @Injectable({
   providedIn: "root",
 })
 export class UsuarioService {
-  private apiUrl = `${environment.apiUrl}/usuarios`
+  private apiUrl: string
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private configService: ConfigService,
+  ) {
+    this.apiUrl = `${this.configService.getApiUrl()}/usuarios`
+  }
 
   obtenerPerfil(): Observable<Usuario> {
     return this.http.get<Usuario>(`${this.apiUrl}/me`)

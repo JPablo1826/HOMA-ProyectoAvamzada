@@ -3,7 +3,7 @@
 
 (function() {
   // Leer API_URL de variables de ambiente o usar default
-  const apiUrl = window.__APP_CONFIG__?.API_URL || "http://localhost:8080/api";
+  const apiUrl = window.__APP_CONFIG__?.API_URL || "/api";
   
   // Crear variable global para que Angular la use
   window.__APP_CONFIG__ = window.__APP_CONFIG__ || {};
